@@ -160,6 +160,52 @@ class LinuxSensorTests(unittest.TestCase):
 
 
 class FeederTests(unittest.TestCase):
+    @mock.patch.object(feeder.ctypes, 'CDLL')
+    @mock.patch.object(feeder, 'pynvml')
+    def test_nvml_c_api_reads_each_fan_and_skips_unsupported(self, nvml, library):
+        nvml.nvmlDeviceGetNumFans.return_value = 2
+        indexes = []
+        def query(device, pointer):
+            value = feeder.ctypes.cast(pointer, feeder.ctypes.POINTER(feeder.NvmlFanSpeedInfo)).contents
+            self.assertEqual(value.version, 12 | (1 << 24))
+            indexes.append(value.fan)
+            if value.fan == 0:
+                return 3  # NVML_ERROR_NOT_SUPPORTED
+            value.speed = 1234
+            return 0
+        library.return_value.nvmlDeviceGetFanSpeedRPM.side_effect = query
+        self.assertEqual(feeder._read_nvml_fans(feeder.ctypes.c_void_p(1)), {1: 1234})
+        self.assertEqual(indexes, [0, 1])
+
+    @mock.patch.object(feeder, 'nvidia_fan_rpms')
+    def test_gpu_fan_uses_working_channel_and_preserves_zero(self, readings):
+        readings.return_value = {0: 0, 1: 1200}
+        self.assertEqual(feeder.nvidia_fan_rpm(), 1200)
+        readings.return_value = {0: 0, 1: 0}
+        self.assertEqual(feeder.nvidia_fan_rpm(), 0)
+        readings.return_value = {}
+        self.assertIsNone(feeder.nvidia_fan_rpm())
+
+    @mock.patch.object(feeder, '_read_nvml_fans', return_value={0: 0, 1: 900})
+    @mock.patch.object(feeder, 'pynvml')
+    def test_nvml_selects_same_gpu_and_shuts_down(self, nvml, readings):
+        nvml.NVMLError = RuntimeError
+        for selector, method, argument in (
+            ('2', 'nvmlDeviceGetHandleByIndex', 2),
+            ('GPU-example', 'nvmlDeviceGetHandleByUUID', 'GPU-example'),
+            ('0000:01:00.0', 'nvmlDeviceGetHandleByPciBusId', '0000:01:00.0'),
+        ):
+            self.assertEqual(feeder.nvidia_fan_rpms(selector), {0: 0, 1: 900})
+            getattr(nvml, method).assert_called_with(argument)
+        self.assertEqual(nvml.nvmlShutdown.call_count, 3)
+        readings.side_effect = OSError('RPM API unavailable')
+        self.assertEqual(feeder.nvidia_fan_rpms(), {})
+        self.assertEqual(nvml.nvmlShutdown.call_count, 4)
+
+    @mock.patch.object(feeder, 'pynvml', None)
+    def test_nvml_optional_on_windows_or_old_installs(self):
+        self.assertEqual(feeder.nvidia_fan_rpms(), {})
+
     def args(self, **kwargs):
         return argparse.Namespace(cpu_fan=None, gpu_fan=None, nvidia_gpu=kwargs.get('nvidia_gpu'),
                                   drm_card=kwargs.get('drm_card'))
@@ -250,7 +296,7 @@ class FeederTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         with mock.patch.object(sys, 'platform', 'win32'), mock.patch.dict(sys.modules, {'linux_sensors': None}):
             spec.loader.exec_module(module)
-        self.assertEqual(module.__version__, '1.2.0')
+        self.assertEqual(module.__version__, '1.2.1')
 
     @unittest.skipUnless(sys.platform.startswith('linux'), 'POSIX pseudo-terminal integration')
     def test_real_serial_packet_over_pty(self):

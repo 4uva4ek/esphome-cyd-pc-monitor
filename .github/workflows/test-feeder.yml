@@ -40,7 +40,7 @@ jobs:
       - if: runner.os == 'Linux'
         run: |
           bash -n install.sh uninstall.sh
-          bash dist/cyd-pc-stats-1.2.0-linux.run --help
+          bash dist/cyd-pc-stats-1.2.1-linux.run --help
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
         uses: actions/upload-artifact@v4
         with:

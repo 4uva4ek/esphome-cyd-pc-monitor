@@ -7,15 +7,15 @@ feeder uses kernel sensors directly; LibreHardwareMonitor is only used on Window
 
 ## Install with one file
 
-Download `cyd-pc-stats-1.2.0-linux.run` and its `.sha256` file from the
-[Linux release](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.0).
+Download `cyd-pc-stats-1.2.1-linux.run` and its `.sha256` file from the
+[Linux release](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.1).
 The installer contains the feeder sources; no Git checkout is required.
 Python dependencies are downloaded from PyPI during installation, so internet
 access is required. Run it in a terminal as your normal user:
 
 ```bash
-sha256sum -c cyd-pc-stats-1.2.0-linux.run.sha256
-bash cyd-pc-stats-1.2.0-linux.run
+sha256sum -c cyd-pc-stats-1.2.1-linux.run.sha256
+bash cyd-pc-stats-1.2.1-linux.run
 ```
 
 Requirements: Linux, Python 3.9+, venv/pip, Bash, tar, awk, and a systemd user
@@ -112,7 +112,7 @@ fields on the wire and `--` on the display, never fabricated zeroes.
 | NVIDIA temperature/load/power/VRAM | `nvidia-smi` from the installed NVIDIA driver. Default: GPU 0. Unsupported fields stay unknown. |
 | AMD temperature/load/power/VRAM/RPM | The kernel `amdgpu` DRM/hwmon files. Default: AMD card with the largest VRAM, if no NVIDIA readings are available. For APUs, the driver may report whole-SoC power and reserved memory. |
 | CPU fan RPM | hwmon fan labeled CPU, or an explicit label, `chip:label`, `chip:fanN`, or full sysfs path. Unlabeled case fans are not guessed as CPU fans. |
-| NVIDIA fan RPM | Unknown: `nvidia-smi` exposes fan percentage, which must not be displayed as RPM. |
+| NVIDIA fan RPM | NVML reports RPM per fan where supported. The display shows the highest available RPM; all fans stopped gives 0, unsupported gives `--`. No percentage conversion. |
 | Intel GPU | No GPU metrics backend in this version. CPU/RAM still work. |
 
 GPU values are always taken from one backend/card, including when individual
@@ -121,9 +121,48 @@ missing hwmon entries, but that package is not required by the feeder.
 
 Host smoke test: CachyOS, Ryzen 7 9800X3D, RTX 5090. CPU temperature/load,
 GPU temperature/load/power/VRAM, and RAM were read successfully. On that host,
-CPU package energy was restricted and no CPU fan hwmon channel was exposed.
+CPU package energy needed the opt-in permission rule below. Loading the built-in nct6683 module exposed the MSI board fans; CPU is nct6687:fan1 and fan2 is the pump. Both RTX 5090 fans reported 0 RPM at idle.
 USB transport is covered by a pseudo-terminal integration test; the physical
 CYD screen has not been visually verified. Other sensor paths are fixture-tested.
+
+## Enable CPU watts when energy is root-only (optional)
+
+First inspect the change, then explicitly grant your group read access:
+
+```bash
+app="${XDG_DATA_HOME:-$HOME/.local/share}/cyd-pc-stats"
+python3 "$app/configure_cpu_power.py" --group "$(id -gn)" --dry-run
+sudo python3 "$app/configure_cpu_power.py" --group "$(id -gn)"
+```
+
+This grants the selected existing group **read-only** access to package energy
+counters and installs `/etc/udev/rules.d/70-cyd-cpu-power.rules` for persistence.
+All members of that group can read energy telemetry; select a private group if
+needed. CPU power limits, fan controls and the feeder's user identity are unchanged.
+The first reading establishes a baseline; watts appear on the next sample.
+
+Remove this optional setting **before uninstalling the app**, if desired:
+
+```bash
+sudo python3 "$app/configure_cpu_power.py" --group "$(id -gn)" --remove
+```
+
+## MSI MAG X870E TOMAHAWK CPU fan
+
+On the tested CachyOS host, the kernel already provides the signed `nct6683`
+module for Nuvoton NCT6687. If no motherboard fans appear in `--list-sensors`:
+
+```bash
+sudo modprobe nct6683
+# After verifying the fan readings, load the driver at future boots:
+printf 'nct6683\n' | sudo tee /etc/modules-load.d/cyd-hwmon.conf
+bash cyd-pc-stats-1.2.1-linux.run --cpu-fan nct6687:fan1
+```
+
+For this board, `fan1` is CPU and `fan2` is the pump. Other boards may differ;
+choose the channel for your own hardware. This does not write any PWM/fan curves.
+The module-loading configuration is separate from the user app; remove
+`/etc/modules-load.d/cyd-hwmon.conf` if you no longer want that boot setting.
 
 ## Uninstall
 
@@ -149,4 +188,6 @@ same sources that `install.sh` uses, plus the license and Linux instructions.
 Interface references: [Linux hwmon](https://docs.kernel.org/hwmon/sysfs-interface.html),
 [powercap](https://docs.kernel.org/power/powercap/powercap.html),
 [AMDGPU sensors](https://docs.kernel.org/gpu/amdgpu/thermal.html),
-[NVIDIA SMI](https://docs.nvidia.com/deploy/nvidia-smi/index.html).
+[NVIDIA SMI](https://docs.nvidia.com/deploy/nvidia-smi/index.html),
+[NVML RPM API](https://docs.nvidia.com/deploy/nvml-api/latest/api/group__nvmlDeviceQueries.html),
+[nct6683 kernel driver](https://docs.kernel.org/hwmon/nct6683.html).

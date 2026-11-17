@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import ctypes
 import json
 import logging
 import logging.handlers
@@ -35,10 +36,15 @@ import psutil
 import serial
 from serial.tools import list_ports
 
+try:
+    import pynvml
+except ImportError:
+    pynvml = None
+
 if sys.platform.startswith("linux"):
     from linux_sensors import LinuxSensors
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 log = logging.getLogger("cyd-pc-stats")
 
@@ -143,6 +149,56 @@ def stats_from_lhm(sensors, cpu_fan_name, gpu_fan_name):
 
 # ---------------------------------------------------------------- fallbacks
 
+class NvmlFanSpeedInfo(ctypes.Structure):
+    _fields_ = [("version", ctypes.c_uint), ("fan", ctypes.c_uint), ("speed", ctypes.c_uint)]
+
+
+def _read_nvml_fans(device):
+    # nvidia-ml-py's RPM wrapper currently hardcodes fan 0. Use the documented
+    # versioned C API to read every fan without relying on binding internals.
+    library = ctypes.CDLL("nvml.dll" if sys.platform == "win32" else "libnvidia-ml.so.1")
+    query = library.nvmlDeviceGetFanSpeedRPM
+    query.argtypes = [ctypes.c_void_p, ctypes.POINTER(NvmlFanSpeedInfo)]
+    query.restype = ctypes.c_int
+    readings = {}
+    for fan in range(pynvml.nvmlDeviceGetNumFans(device)):
+        info = NvmlFanSpeedInfo(ctypes.sizeof(NvmlFanSpeedInfo) | (1 << 24), fan, 0)
+        if query(ctypes.cast(device, ctypes.c_void_p), ctypes.byref(info)) == 0:
+            readings[fan] = info.speed
+    return readings
+
+
+def nvidia_fan_rpms(gpu=None):
+    """Return supported NVML RPM channels, never percentages or estimates."""
+    if pynvml is None:
+        return {}
+    initialized = False
+    try:
+        pynvml.nvmlInit()
+        initialized = True
+        selector = gpu or "0"
+        if selector.isdecimal():
+            device = pynvml.nvmlDeviceGetHandleByIndex(int(selector))
+        elif selector.startswith("GPU-"):
+            device = pynvml.nvmlDeviceGetHandleByUUID(selector)
+        else:
+            device = pynvml.nvmlDeviceGetHandleByPciBusId(selector)
+        return _read_nvml_fans(device)
+    except (pynvml.NVMLError, AttributeError, OSError, ValueError):
+        return {}
+    finally:
+        if initialized:
+            try:
+                pynvml.nvmlShutdown()
+            except pynvml.NVMLError:
+                pass
+
+
+def nvidia_fan_rpm(gpu=None):
+    # The display has one GPU fan field: show the fastest available fan.
+    return max(nvidia_fan_rpms(gpu).values(), default=None)
+
+
 def stats_from_nvidia_smi(gpu=None):
     exe = shutil.which("nvidia-smi")
     if not exe:
@@ -162,7 +218,8 @@ def stats_from_nvidia_smi(gpu=None):
     t, load, power, used, total = vals
     return {"gpu_temp": t, "gpu_load": load, "gpu_power": power,
             "vram_used": used / 1024 if used is not None else None,
-            "vram_total": total / 1024 if total is not None else None}
+            "vram_total": total / 1024 if total is not None else None,
+            "gpu_fan": nvidia_fan_rpm(gpu)}
 
 
 def collect(args, linux=None):
@@ -332,6 +389,8 @@ def main():
             if not any(v is not None for v in gpu_stats.values()) and not args.nvidia_gpu:
                 gpu_stats = linux.amd_stats(args.drm_card, args.gpu_fan)
             print("GPU:", json.dumps(gpu_stats, sort_keys=True))
+            if not args.drm_card:
+                print("NVIDIA fans (RPM):", json.dumps(nvidia_fan_rpms(args.nvidia_gpu), sort_keys=True))
             return
         sensors = read_lhm()
         if sensors is None:

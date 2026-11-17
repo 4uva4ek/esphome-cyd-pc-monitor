@@ -7,7 +7,7 @@ A live PC hardware monitor on the ESP32 **"Cheap Yellow Display"** (CYD). It sho
 
 This fork adds **Linux support**: AMD/Intel CPU sensors, NVIDIA/AMD GPU metrics,
 and a systemd user service. Download the single-file
-[Linux installer](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.0)
+[Linux installer](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.1)
 and follow [Linux setup](docs/linux.md) / [Установка в Linux](docs/linux.ru.md).
 The original Windows support and CYD firmware are retained.
 
@@ -56,11 +56,11 @@ The number of USB ports doesn't reliably tell you the controller. If the screen 
 
 #### Linux
 
-Download `cyd-pc-stats-1.2.0-linux.run` from the
-[Linux release](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.0), then:
+Download `cyd-pc-stats-1.2.1-linux.run` from the
+[Linux release](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.1), then:
 
 ```bash
-bash cyd-pc-stats-1.2.0-linux.run
+bash cyd-pc-stats-1.2.1-linux.run
 ```
 
 Or clone this fork and run `./install.sh`. Run as your normal user, without sudo.

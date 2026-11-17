@@ -56,6 +56,7 @@ if systemctl --user show-environment >/dev/null 2>&1; then
 fi
 cp -- "$source_dir/feeder/pc_stats_feeder.py" "$source_dir/feeder/linux_sensors.py" \
       "$source_dir/feeder/requirements.txt" "$source_dir/uninstall.sh" "$install_dir/"
+cp -- "$source_dir/scripts/configure_cpu_power.py" "$install_dir/"
 # Store the exact launch arguments, including spaces, without eval or shell parsing.
 "$install_dir/venv/bin/python" - "$install_dir" "$unit_dir" "${feeder_args[@]}" <<'PY'
 import json

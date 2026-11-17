@@ -25,3 +25,6 @@ if systemctl --user show-environment >/dev/null 2>&1; then
 fi
 rm -rf -- "$install_dir"
 echo 'Removed CYD PC Stats. Display firmware and system packages were kept.'
+if [[ -f /etc/udev/rules.d/70-cyd-cpu-power.rules ]]; then
+    echo 'Optional CPU power access is still configured; see docs/linux.md to remove it.'
+fi

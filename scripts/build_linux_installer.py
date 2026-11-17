@@ -11,7 +11,8 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ('install.sh', 'uninstall.sh', 'LICENSE', 'docs/linux.md', 'docs/linux.ru.md',
-         'feeder/pc_stats_feeder.py', 'feeder/linux_sensors.py', 'feeder/requirements.txt')
+         'feeder/pc_stats_feeder.py', 'feeder/linux_sensors.py', 'feeder/requirements.txt',
+         'scripts/configure_cpu_power.py')
 HEADER = b'''#!/usr/bin/env bash
 # CYD PC Stats Linux installer. Contains source code; pip downloads dependencies.
 set -euo pipefail
