@@ -122,8 +122,9 @@ missing hwmon entries, but that package is not required by the feeder.
 Host smoke test: CachyOS, Ryzen 7 9800X3D, RTX 5090. CPU temperature/load,
 GPU temperature/load/power/VRAM, and RAM were read successfully. On that host,
 CPU package energy needed the opt-in permission rule below. Loading the built-in nct6683 module exposed the MSI board fans; CPU is nct6687:fan1 and fan2 is the pump. Both RTX 5090 fans reported 0 RPM at idle.
-USB transport is covered by a pseudo-terminal integration test; the physical
-CYD screen has not been visually verified. Other sensor paths are fixture-tested.
+USB transport is covered by a pseudo-terminal integration test. After installation,
+the user confirmed CPU watts and CPU fan RPM on the physical CYD. Other sensor
+paths are fixture-tested.
 
 ## Enable CPU watts when energy is root-only (optional)
 

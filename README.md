@@ -164,7 +164,7 @@ This removes the login task, the feeder and its folder. LibreHardwareMonitor and
 
 ## Tested on
 
-- Linux feeder: CachyOS, Ryzen 7 9800X3D, RTX 5090 (live sensors and pseudo-terminal serial test; physical CYD screen not verified)
+- Linux feeder: CachyOS, Ryzen 7 9800X3D, RTX 5090 (live sensors and serial tests; CPU watts and CPU fan RPM confirmed on the physical CYD)
 - Ryzen 9 9900X, RTX 4070 SUPER, MSI motherboard, Windows 11
 - Dual-USB CYD with an ILI9341 controller
 - ESPHome 2026.9.1
