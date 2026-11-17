@@ -80,6 +80,10 @@ class LinuxSensorTests(unittest.TestCase):
             self.assertIsNone(read_number(path))
 
     def rapl(self, energy, zone='intel-rapl:0', name='package-0'):
+        # The reader identifies packages by their name file, not directory name.
+        # Windows reserves ':' for drive letters / alternate data streams.
+        if sys.platform == 'win32':
+            zone = zone.replace(':', '_')
         base = f'class/powercap/{zone}'
         self.write(f'{base}/name', name)
         self.write(f'{base}/energy_uj', energy)
