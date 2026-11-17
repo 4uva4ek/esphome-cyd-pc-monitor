@@ -1,0 +1,40 @@
+name: Test feeder and Linux installer
+
+on:
+  push:
+    branches: [main]
+    paths: ['feeder/**', 'tests/**', 'scripts/**', 'install.sh', 'uninstall.sh', 'docs/linux*', '.github/workflows/test-feeder.yml']
+  pull_request:
+    paths: ['feeder/**', 'tests/**', 'scripts/**', 'install.sh', 'uninstall.sh', 'docs/linux*', '.github/workflows/test-feeder.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.9', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r feeder/requirements.txt
+      - run: python -m unittest discover -s tests -v
+        env:
+          CYD_INSTALLER_SMOKE: ${{ runner.os == 'Linux' && '1' || '' }}
+      - run: python scripts/build_linux_installer.py
+      - if: runner.os == 'Linux'
+        run: |
+          bash -n install.sh uninstall.sh
+          bash dist/cyd-pc-stats-1.2.0-linux.run --help
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installer
+          path: dist/*

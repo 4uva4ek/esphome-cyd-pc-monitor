@@ -6,8 +6,10 @@ secrets.yaml
 __pycache__/
 *.pyc
 .venv/
+.venv-esphome/
 venv/
 
 # Logs and scratch files
 *.log
 _*.txt
+dist/

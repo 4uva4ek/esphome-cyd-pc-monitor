@@ -1,18 +1,22 @@
 """Send PC temps and usage to the CYD over its USB serial port.
 
-Sources, best first:
+Sources:
+  * Linux: hwmon (CPU temperature/fans), powercap (CPU package power),
+    nvidia-smi (NVIDIA GPU) or DRM/hwmon (AMD GPU).
   * LibreHardwareMonitor's web server (Options > Remote Web Server > Run, port 8085):
     CPU temp/power, GPU stats, fan RPM.
   * psutil: CPU load and RAM (always available).
   * nvidia-smi: GPU stats if LibreHardwareMonitor isn't running.
 
-Without LibreHardwareMonitor everything except CPU temp, CPU power and fan RPM still works.
+Unavailable sensors are sent as empty fields, displayed as -- on the CYD.
 
 Usage:
   python pc_stats_feeder.py                 # auto-detect the CYD's COM port
   python pc_stats_feeder.py --port COM5
-  python pc_stats_feeder.py --list-sensors  # print LibreHardwareMonitor sensor names
+  python pc_stats_feeder.py --port /dev/serial/by-id/usb-...
+  python pc_stats_feeder.py --list-sensors  # print platform sensor names
   python pc_stats_feeder.py --dry-run       # print what would be sent
+  python pc_stats_feeder.py --dry-run --once
 """
 
 import argparse
@@ -31,7 +35,10 @@ import psutil
 import serial
 from serial.tools import list_ports
 
-__version__ = "1.1.0"
+if sys.platform.startswith("linux"):
+    from linux_sensors import LinuxSensors
+
+__version__ = "1.2.0"
 
 log = logging.getLogger("cyd-pc-stats")
 
@@ -136,15 +143,17 @@ def stats_from_lhm(sensors, cpu_fan_name, gpu_fan_name):
 
 # ---------------------------------------------------------------- fallbacks
 
-def stats_from_nvidia_smi():
+def stats_from_nvidia_smi(gpu=None):
     exe = shutil.which("nvidia-smi")
     if not exe:
         return {}
     try:
         res = subprocess.run(
             [exe, "--query-gpu=temperature.gpu,utilization.gpu,power.draw,memory.used,memory.total",
-             "--format=csv,noheader,nounits"],
+             "--format=csv,noheader,nounits", "--id=" + (gpu or "0")],
             capture_output=True, text=True, timeout=2, creationflags=NO_WINDOW)
+        if res.returncode != 0:
+            return {}
         vals = [_parse_value(v) for v in res.stdout.splitlines()[0].split(",")]
     except (OSError, subprocess.SubprocessError, IndexError):
         return {}
@@ -156,15 +165,24 @@ def stats_from_nvidia_smi():
             "vram_total": total / 1024 if total is not None else None}
 
 
-def collect(args):
+def collect(args, linux=None):
     stats = {}
-    sensors = read_lhm()
-    if sensors:
-        stats.update({k: v for k, v in stats_from_lhm(sensors, args.cpu_fan, args.gpu_fan).items() if v is not None})
-    if any(k not in stats for k in ("gpu_temp", "gpu_load", "vram_used")):
-        for k, v in stats_from_nvidia_smi().items():
-            if v is not None:
-                stats.setdefault(k, v)
+    if linux is not None:
+        sensors = linux.hwmon()
+        stats.update(linux.cpu_stats(sensors, args.cpu_fan))
+        gpu = {} if args.drm_card else stats_from_nvidia_smi(args.nvidia_gpu)
+        # Select one GPU backend; never mix readings from two different cards.
+        if not any(v is not None for v in gpu.values()) and not args.nvidia_gpu:
+            gpu = linux.amd_stats(args.drm_card, args.gpu_fan)
+        stats.update(gpu)
+    else:
+        sensors = read_lhm()
+        if sensors:
+            stats.update({k: v for k, v in stats_from_lhm(sensors, args.cpu_fan, args.gpu_fan).items() if v is not None})
+        if any(k not in stats for k in ("gpu_temp", "gpu_load", "vram_used")):
+            for k, v in stats_from_nvidia_smi(args.nvidia_gpu).items():
+                if v is not None:
+                    stats.setdefault(k, v)
     stats.setdefault("cpu_load", psutil.cpu_percent(interval=None))
     mem = psutil.virtual_memory()
     stats["ram_used"] = (mem.total - mem.available) / 1024**3
@@ -178,7 +196,7 @@ FIELDS = ("cpu_temp", "cpu_load", "cpu_power", "gpu_temp", "gpu_load", "gpu_powe
 
 def format_line(stats):
     def fmt(v):
-        return "" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.1f}"
+        return "" if v is None or not math.isfinite(v) else f"{v:.1f}"
     return "PCS," + ",".join(fmt(stats.get(f)) for f in FIELDS) + "\n"
 
 
@@ -186,6 +204,9 @@ def format_line(stats):
 
 def find_port():
     ports = [p for p in list_ports.comports() if p.vid in CYD_USB_VIDS]
+    if len(ports) > 1:
+        raise serial.SerialException("Multiple USB serial devices found; select the CYD with --port: "
+                                     + ", ".join(p.device for p in ports))
     return ports[0].device if ports else None
 
 
@@ -194,6 +215,8 @@ def open_port(name):
     ser.port = name
     ser.baudrate = 115200
     ser.write_timeout = 1
+    if sys.platform.startswith("linux"):
+        ser.exclusive = True
     # Keep DTR/RTS low so opening the port doesn't reset the ESP32 or put it in bootloader mode.
     ser.dtr = False
     ser.rts = False
@@ -272,21 +295,44 @@ class LhmWatchdog:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", help="COM port of the CYD (default: auto-detect)")
+    ap.add_argument("--port", help="serial port, e.g. COM5 or /dev/serial/by-id/... (default: auto-detect)")
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between updates (default 1)")
-    ap.add_argument("--cpu-fan", help="LibreHardwareMonitor name of the CPU fan header, e.g. 'Fan #2'")
-    ap.add_argument("--gpu-fan", help="LibreHardwareMonitor name of the GPU fan, e.g. 'GPU Fan 1'")
-    ap.add_argument("--list-sensors", action="store_true", help="print LibreHardwareMonitor sensors and exit")
+    ap.add_argument("--cpu-fan", help="CPU fan name, Linux chip:label, chip:fanN or sysfs path")
+    ap.add_argument("--gpu-fan", help="GPU fan name or Linux hwmon selector (AMD only on Linux)")
+    gpu = ap.add_mutually_exclusive_group()
+    gpu.add_argument("--nvidia-gpu", help="NVIDIA index, UUID or PCI ID (default: first NVIDIA GPU)")
+    gpu.add_argument("--drm-card", help="Linux AMD DRM card, e.g. card1; bypasses NVIDIA detection")
+    ap.add_argument("--list-sensors", action="store_true", help="print platform sensors and exit")
     ap.add_argument("--dry-run", action="store_true", help="print lines instead of sending them")
+    ap.add_argument("--once", action="store_true", help="with --dry-run, print one sample and exit")
+    ap.add_argument("--check-config", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--log-file", help="also write status messages to this file (rotates at 500 KB)")
     ap.add_argument("--no-restart-lhm", action="store_true",
                     help="don't restart LibreHardwareMonitor through its startup task if it exits")
     ap.add_argument("-v", "--verbose", action="store_true", help="log every line sent")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = ap.parse_args()
+    if not math.isfinite(args.interval) or args.interval <= 0:
+        ap.error("--interval must be a finite number greater than zero")
+    if args.once and not args.dry_run:
+        ap.error("--once requires --dry-run")
+    is_linux = sys.platform.startswith("linux")
+    if args.drm_card and (not is_linux or not re.fullmatch(r"card\d+", args.drm_card)):
+        ap.error("--drm-card requires Linux and a card name such as card1")
+    if args.check_config:
+        return
+    linux = LinuxSensors() if is_linux else None
     setup_logging(args.log_file, args.verbose)
 
     if args.list_sensors:
+        if linux is not None:
+            linux.describe()
+            gpu_stats = (linux.amd_stats(args.drm_card, args.gpu_fan) if args.drm_card else
+                         stats_from_nvidia_smi(args.nvidia_gpu))
+            if not any(v is not None for v in gpu_stats.values()) and not args.nvidia_gpu:
+                gpu_stats = linux.amd_stats(args.drm_card, args.gpu_fan)
+            print("GPU:", json.dumps(gpu_stats, sort_keys=True))
+            return
         sensors = read_lhm()
         if sensors is None:
             sys.exit(f"LibreHardwareMonitor web server not reachable at {LHM_URL}")
@@ -298,25 +344,33 @@ def main():
     psutil.cpu_percent(interval=None)  # prime the counter; the first reading is always 0
     lhm_status = StatusLog()
     serial_status = StatusLog()
-    watchdog = None if (args.no_restart_lhm or args.dry_run) else LhmWatchdog()
+    watchdog = LhmWatchdog() if sys.platform == "win32" and not (args.no_restart_lhm or args.dry_run) else None
+    if linux is not None:
+        log.info("Linux sensors: hwmon / powercap + NVIDIA / AMD; unavailable values show --")
+    if args.once:
+        collect(args, linux)  # prime RAPL energy and CPU load for a meaningful one-shot sample
+        time.sleep(args.interval)
     ser = None
     while True:
         started = time.monotonic()
-        stats, lhm_up = collect(args)
-        lhm_status("LibreHardwareMonitor: " + ("connected" if lhm_up else
-                   f"not reachable at {LHM_URL} (no CPU temp/power or fan RPM)"))
+        stats, lhm_up = collect(args, linux)
+        if linux is None:
+            lhm_status("LibreHardwareMonitor: " + ("connected" if lhm_up else
+                       f"not reachable at {LHM_URL} (no CPU temp/power or fan RPM)"))
         if watchdog:
             watchdog.update(lhm_up)
         line = format_line(stats)
 
         if args.dry_run:
             print(line, end="", flush=True)
+            if args.once:
+                return
         else:
             try:
                 if ser is None:
                     port = args.port or find_port()
                     if not port:
-                        raise serial.SerialException("CYD not found (no CH340/CP210x COM port)")
+                        raise serial.SerialException("CYD not found (no CH340/CP210x serial port)")
                     ser = open_port(port)
                     serial_status(f"Sending to {port}")
                 ser.write(line.encode("ascii"))

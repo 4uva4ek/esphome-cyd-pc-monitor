@@ -13,6 +13,24 @@ You only need this to change the layout, colors or rotation. Otherwise, use the 
 
 ## Install ESPHome
 
+### Linux
+
+Use a Python version supported by your chosen ESPHome release (the upstream
+firmware workflow pins ESPHome 2026.9.1). For example, with Python 3.12 installed:
+
+```bash
+python3.12 -m venv .venv-esphome
+.venv-esphome/bin/python -m pip install esphome==2026.9.1
+systemctl --user stop cyd-pc-stats
+.venv-esphome/bin/esphome run firmware/cyd-ili9341.yaml --device /dev/ttyUSB0
+systemctl --user start cyd-pc-stats
+```
+
+See [Linux USB permissions](linux.md#usb-access-and-firmware) if access is denied.
+The `.run` PC installer does not compile or flash firmware.
+
+### Windows
+
 ESPHome supports a narrower range of Python versions than the feeder. Python 3.12 is a safe choice:
 
 ```powershell

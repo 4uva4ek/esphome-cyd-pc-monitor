@@ -1,5 +1,9 @@
 # Troubleshooting
 
+For Linux installation, permissions, sensors and service logs, see
+[Linux setup](linux.md) / [Установка в Linux](linux.ru.md). The feeder sections
+below describe Windows; display/controller troubleshooting applies to both.
+
 ## The display
 
 | Symptom | Cause | Fix |

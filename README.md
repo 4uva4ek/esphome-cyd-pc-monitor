@@ -5,6 +5,12 @@
 
 A live PC hardware monitor on the ESP32 **"Cheap Yellow Display"** (CYD). It shows CPU and GPU temperature, load and power, RAM and VRAM usage, and fan speeds, all sent over the USB cable that powers it. It doesn't use Wi‑Fi, Home Assistant or the cloud.
 
+This fork adds **Linux support**: AMD/Intel CPU sensors, NVIDIA/AMD GPU metrics,
+and a systemd user service. Download the single-file
+[Linux installer](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.0)
+and follow [Linux setup](docs/linux.md) / [Установка в Linux](docs/linux.ru.md).
+The original Windows support and CYD firmware are retained.
+
 <p align="center">
   <img src="docs/images/cyd.jpg" alt="The dashboard on a CYD in a 3D-printed case: CPU 55°C at 9% load and 58 W, GPU 44°C at 29% load and 18 W, RAM and VRAM bars, and fan speeds" width="640">
 </p>
@@ -16,7 +22,7 @@ A live PC hardware monitor on the ESP32 **"Cheap Yellow Display"** (CYD). It sho
 - **Fan speeds** for the CPU and GPU, in RPM
 - **USB only**: the cable that powers the display also carries the data
 - **Ready-made firmware** for all three CYD display controllers, flashed from your browser with nothing to install
-- **One-line installer** for the PC side, which starts hidden at every login
+- **Installers for Windows and Linux**, with automatic startup at login
 - **Fails gracefully**: a "Waiting for PC" box appears when data stops, and the backlight dims after a minute
 
 ## What you need
@@ -25,8 +31,8 @@ A live PC hardware monitor on the ESP32 **"Cheap Yellow Display"** (CYD). It sho
 |---|---|
 | **Display** | ESP32-2432S028 "Cheap Yellow Display", 2.8" 320×240. Any revision: micro-USB only, or micro-USB + USB‑C. |
 | **Cable** | A USB **data** cable. Use USB‑A to micro-USB or USB‑A to USB‑C, because many CYDs don't work with C‑to‑C cables. For mounting inside the case, a "USB 2.0 9‑pin header to micro-USB/USB‑C" cable works. |
-| **PC** | Windows 10 or 11 with [Python](https://www.python.org/downloads/) 3.9 or newer |
-| **Sensors** | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (free), for CPU temperature, CPU power and fan speeds. The installer sets it up for you. |
+| **PC** | Linux or Windows 10/11 with [Python](https://www.python.org/downloads/) 3.9 or newer |
+| **Sensors** | Linux: kernel hwmon/powercap and NVIDIA driver tools or AMD DRM. Windows: [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), configured by the Windows installer. |
 
 ## Quick start
 
@@ -47,6 +53,21 @@ The number of USB ports doesn't reliably tell you the controller. If the screen 
 > **Won't connect?** Some CYDs can't enter flashing mode by themselves. Hold the **BOOT** button on the back while the flasher connects, and let go once it starts writing.
 
 ### 2. Run the installer
+
+#### Linux
+
+Download `cyd-pc-stats-1.2.0-linux.run` from the
+[Linux release](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.0), then:
+
+```bash
+bash cyd-pc-stats-1.2.0-linux.run
+```
+
+Or clone this fork and run `./install.sh`. Run as your normal user, without sudo.
+See [Linux setup](docs/linux.md) for prerequisites, serial permissions, GPU/fan
+selection and `--no-autostart`. [Инструкция на русском](docs/linux.ru.md).
+
+#### Windows
 
 Open PowerShell and run:
 
@@ -99,7 +120,11 @@ An empty field means "unknown" and shows as `--`. On the CYD, ESPHome's serial l
 
 The feeder finds the CYD by its USB‑serial chip (CH340/CH9102 or CP210x), so it keeps working when you move it to another USB port. If the CYD is unplugged, the feeder retries every few seconds.
 
-LibreHardwareMonitor occasionally crashes on its own. If it stays unreachable for 20 seconds and isn't running, the feeder restarts it through its startup task. That brings it back with admin rights and no UAC prompt, and the feeder tries at most once every 2 minutes. Use `--no-restart-lhm` to turn this off.
+On Linux, hwmon/powercap replaces LibreHardwareMonitor; NVIDIA uses `nvidia-smi`,
+and AMD uses DRM/hwmon. The feeder does not contact LibreHardwareMonitor or run
+Windows recovery commands on Linux. Missing sensors stay unknown (`--`).
+
+On Windows, LibreHardwareMonitor occasionally crashes on its own. If it stays unreachable for 20 seconds and isn't running, the feeder restarts it through its startup task. That brings it back with admin rights and no UAC prompt, and the feeder tries at most once every 2 minutes. Use `--no-restart-lhm` to turn this off.
 
 ## Customizing
 
@@ -108,6 +133,9 @@ LibreHardwareMonitor occasionally crashes on its own. If it stays unreachable fo
 - **Building the firmware yourself**: see [docs/building.md](docs/building.md).
 
 ## Troubleshooting
+
+Linux: see [sensor and USB diagnostics](docs/linux.md#sensors-and-diagnostics).
+The Windows-specific fixes follow.
 
 | Symptom | Fix |
 |---|---|
@@ -120,6 +148,14 @@ More in [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Uninstall
 
+Linux:
+
+```bash
+bash "${XDG_DATA_HOME:-$HOME/.local/share}/cyd-pc-stats/uninstall.sh"
+```
+
+Windows:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\CYD-PC-Stats\uninstall.ps1"
 ```
@@ -128,6 +164,7 @@ This removes the login task, the feeder and its folder. LibreHardwareMonitor and
 
 ## Tested on
 
+- Linux feeder: CachyOS, Ryzen 7 9800X3D, RTX 5090 (live sensors and pseudo-terminal serial test; physical CYD screen not verified)
 - Ryzen 9 9900X, RTX 4070 SUPER, MSI motherboard, Windows 11
 - Dual-USB CYD with an ILI9341 controller
 - ESPHome 2026.9.1
