@@ -9,7 +9,9 @@ This fork adds **Linux support**: AMD/Intel CPU sensors, NVIDIA/AMD GPU metrics,
 and a systemd user service. Download the single-file
 [Linux installer](https://github.com/4uva4ek/esphome-cyd-pc-monitor/releases/tag/linux-v1.2.1)
 and follow [Linux setup](docs/linux.md) / [Установка в Linux](docs/linux.ru.md).
-The original Windows support and CYD firmware are retained.
+The original Windows support and CYD firmware are retained. The self-contained
+Windows installer (`cyd-pc-stats-<version>-windows.ps1`) is produced by
+`scripts/build_windows_installer.py`; see [Quick start](#2-run-the-installer).
 
 <p align="center">
   <img src="docs/images/cyd.jpg" alt="The dashboard on a CYD in a 3D-printed case: CPU 55°C at 9% load and 58 W, GPU 44°C at 29% load and 18 W, RAM and VRAM bars, and fan speeds" width="640">
@@ -73,13 +75,13 @@ selection and `--no-autostart`. [Инструкция на русском](docs/
 Open PowerShell and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/nyburglar/esphome-cyd-pc-monitor/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/4uva4ek/esphome-cyd-pc-monitor/main/install.ps1 | iex
 ```
 
 Or clone the repo and run it locally:
 
 ```powershell
-git clone https://github.com/nyburglar/esphome-cyd-pc-monitor.git
+git clone https://github.com/4uva4ek/esphome-cyd-pc-monitor.git
 cd esphome-cyd-pc-monitor
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```

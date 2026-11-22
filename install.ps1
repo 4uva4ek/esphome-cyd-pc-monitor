@@ -36,7 +36,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = 'nyburglar/esphome-cyd-pc-monitor'
+$Repo = '4uva4ek/esphome-cyd-pc-monitor'
 $Branch = 'main'
 $InstallDir = Join-Path $env:LOCALAPPDATA 'CYD-PC-Stats'
 $TaskName = 'CYD PC Stats Feeder'
