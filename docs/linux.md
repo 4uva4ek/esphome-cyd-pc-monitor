@@ -2,7 +2,7 @@
 
 [Инструкция на русском](linux.ru.md)
 
-The existing CYD firmware and 12-field USB protocol work unchanged. The Linux
+The existing CYD firmware and USB protocol work unchanged (it reads the same 13-field `PCS,` lines plus an optional OS label). The Linux
 feeder uses kernel sensors directly; LibreHardwareMonitor is only used on Windows.
 
 ## Install with one file

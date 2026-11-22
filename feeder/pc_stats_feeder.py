@@ -25,6 +25,7 @@ import json
 import logging
 import logging.handlers
 import math
+import platform
 import re
 import shutil
 import subprocess
@@ -44,7 +45,7 @@ except ImportError:
 if sys.platform.startswith("linux"):
     from linux_sensors import LinuxSensors
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 log = logging.getLogger("cyd-pc-stats")
 
@@ -147,6 +148,58 @@ def stats_from_lhm(sensors, cpu_fan_name, gpu_fan_name):
     return out
 
 
+# ---------------------------------------------------------------- OS
+
+def os_label():
+    """Human-readable OS label, e.g. 'Windows 11', 'macOS 15', 'Debian 12'."""
+    sysname = platform.system()
+    if sysname == "Windows":
+        try:
+            getver = getattr(sys, "getwindowsversion", None)
+            v = getver() if getver else None
+            if v and v.build >= 22000:
+                return "Windows 11"
+            if v and v.build >= 10240:
+                return "Windows 10"
+            if v:
+                return f"Windows {v.major}.{v.minor}"
+            return "Windows"
+        except Exception:
+            return "Windows"
+    if sysname == "Darwin":
+        ver = platform.mac_ver()[0]
+        return f"macOS {ver.split('.')[0]}" if ver else "macOS"
+    if sysname == "Linux":
+        try:
+            for line in open("/etc/os-release", encoding="utf-8"):
+                if line.startswith("PRETTY_NAME="):
+                    return line.split("=", 1)[1].strip().strip('"')
+        except OSError:
+            pass
+        return "Linux"
+    return sysname or "Unknown"
+
+
+# ---------------------------------------------------------------- network
+
+class NetSpeed:
+    """Tracks aggregate receive throughput (MB/s) over successive calls."""
+
+    def __init__(self):
+        self.last_t = time.monotonic()
+        self.last_rx = sum(i.bytes_recv for i in psutil.net_io_counters(pernic=True).values())
+
+    def update(self):
+        now = time.monotonic()
+        rx = sum(i.bytes_recv for i in psutil.net_io_counters(pernic=True).values())
+        dt = now - self.last_t
+        self.last_t = now
+        self.last_rx = rx
+        if dt <= 0:
+            return None
+        return max(0.0, (rx - self.last_rx) / dt / 1e6)  # MB/s
+
+
 # ---------------------------------------------------------------- fallbacks
 
 class NvmlFanSpeedInfo(ctypes.Structure):
@@ -222,7 +275,7 @@ def stats_from_nvidia_smi(gpu=None):
             "gpu_fan": nvidia_fan_rpm(gpu)}
 
 
-def collect(args, linux=None):
+def collect(args, linux=None, net_monitor=None):
     stats = {}
     if linux is not None:
         sensors = linux.hwmon()
@@ -244,17 +297,22 @@ def collect(args, linux=None):
     mem = psutil.virtual_memory()
     stats["ram_used"] = (mem.total - mem.available) / 1024**3
     stats["ram_total"] = mem.total / 1024**3
+    net = net_monitor.update() if net_monitor else None
+    if net is not None:
+        stats["net_mb"] = net
     return stats, sensors is not None
 
 
 FIELDS = ("cpu_temp", "cpu_load", "cpu_power", "gpu_temp", "gpu_load", "gpu_power",
-          "ram_used", "ram_total", "vram_used", "vram_total", "cpu_fan", "gpu_fan")
+          "ram_used", "ram_total", "vram_used", "vram_total", "cpu_fan", "gpu_fan", "net_mb")
 
 
-def format_line(stats):
+def format_line(stats, os_str):
     def fmt(v):
         return "" if v is None or not math.isfinite(v) else f"{v:.1f}"
-    return "PCS," + ",".join(fmt(stats.get(f)) for f in FIELDS) + "\n"
+    os_str = (os_str or "").replace(",", " ").strip()
+    os_str = os_str.encode("ascii", "ignore").decode("ascii").strip()
+    return "PCS," + ",".join(fmt(stats.get(f)) for f in FIELDS) + "," + os_str + "\n"
 
 
 # ---------------------------------------------------------------- serial
@@ -401,6 +459,7 @@ def main():
 
     log.info(f"CYD PC Stats feeder {__version__}")
     psutil.cpu_percent(interval=None)  # prime the counter; the first reading is always 0
+    net_monitor = NetSpeed()  # tracks receive throughput; also useful in --dry-run
     lhm_status = StatusLog()
     serial_status = StatusLog()
     watchdog = LhmWatchdog() if sys.platform == "win32" and not (args.no_restart_lhm or args.dry_run) else None
@@ -410,15 +469,16 @@ def main():
         collect(args, linux)  # prime RAPL energy and CPU load for a meaningful one-shot sample
         time.sleep(args.interval)
     ser = None
+    os_text = os_label()
     while True:
         started = time.monotonic()
-        stats, lhm_up = collect(args, linux)
+        stats, lhm_up = collect(args, linux, net_monitor)
         if linux is None:
             lhm_status("LibreHardwareMonitor: " + ("connected" if lhm_up else
                        f"not reachable at {LHM_URL} (no CPU temp/power or fan RPM)"))
         if watchdog:
             watchdog.update(lhm_up)
-        line = format_line(stats)
+        line = format_line(stats, os_text)
 
         if args.dry_run:
             print(line, end="", flush=True)

@@ -210,12 +210,22 @@ class FeederTests(unittest.TestCase):
         return argparse.Namespace(cpu_fan=None, gpu_fan=None, nvidia_gpu=kwargs.get('nvidia_gpu'),
                                   drm_card=kwargs.get('drm_card'))
 
-    def test_wire_format_exactly_twelve_fields(self):
+    def test_wire_format_exactly_thirteen_fields_plus_os(self):
         line = feeder.format_line(dict(cpu_temp=45, gpu_load=0, cpu_power=float('nan'),
-                                       gpu_power=float('inf'), cpu_fan=1234))
-        self.assertEqual(line, 'PCS,45.0,,,,0.0,,,,,,1234.0,\n')
-        self.assertEqual(len(line.strip().split(',')), 13)
+                                       gpu_power=float('inf'), cpu_fan=1234), '')
+        self.assertEqual(line, 'PCS,45.0,,,,0.0,,,,,,1234.0,,,\n')
+        self.assertEqual(len(line.strip().split(',')), 15)  # PCS + 13 numeric + OS
         self.assertTrue(line.isascii())
+
+    def test_wire_format_with_os_label(self):
+        line = feeder.format_line({'cpu_temp': 45, 'gpu_temp': 42, 'gpu_power': 50},
+                                  'macOS 27')
+        self.assertEqual(line, 'PCS,45.0,,,42.0,,50.0,,,,,,,,macOS 27\n')
+        self.assertTrue(line.isascii())
+
+    def test_os_label_sanitized_and_ascii_safe(self):
+        line = feeder.format_line({}, 'Windows 11, v2 🚀')
+        self.assertEqual(line, 'PCS,,,,,,,,,,,,,,Windows 11  v2\n')
 
     @mock.patch.object(feeder.shutil, 'which', return_value='/usr/bin/nvidia-smi')
     @mock.patch.object(feeder.subprocess, 'run')
@@ -296,7 +306,7 @@ class FeederTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         with mock.patch.object(sys, 'platform', 'win32'), mock.patch.dict(sys.modules, {'linux_sensors': None}):
             spec.loader.exec_module(module)
-        self.assertEqual(module.__version__, '1.2.1')
+        self.assertEqual(module.__version__, '1.3.0')
 
     @unittest.skipUnless(sys.platform.startswith('linux'), 'POSIX pseudo-terminal integration')
     def test_real_serial_packet_over_pty(self):
@@ -310,7 +320,7 @@ class FeederTests(unittest.TestCase):
              mock.patch.object(feeder.serial.Serial, '_update_rts_state'):
             port = feeder.open_port(os.ttyname(slave))
         self.addCleanup(port.close)
-        line = feeder.format_line({'cpu_temp': 45, 'gpu_temp': 42, 'gpu_power': 50})
+        line = feeder.format_line({'cpu_temp': 45, 'gpu_temp': 42, 'gpu_power': 50}, 'macOS 27')
         port.write(line.encode('ascii'))
         self.assertTrue(select.select([master], [], [], 2)[0])
         self.assertEqual(os.read(master, 4096).decode('ascii'), line)

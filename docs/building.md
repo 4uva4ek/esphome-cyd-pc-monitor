@@ -80,11 +80,11 @@ $env:IDF_TOOLS_PATH = "$env:LOCALAPPDATA\esphome\Cache\idf"
 
 ## Things to change
 
-- **Temperature colors**: `set_temp(id(cpu_temp_lbl), cpu_t, 70, 85)` in `common.yaml`. The last two numbers are the amber and red thresholds.
+- **Temperature colors**: the `set_load_bar(...)` call in `common.yaml` (CPU example: `set_load_bar(id(cpu_bar), id(cpu_info_lbl), cpu_l, cpu_t, cpu_p, 70, 85)`). The last two numbers are the amber and red thresholds.
 - **Rotation**: `lvgl_rotation` in your variant file. Add 180 to flip the picture.
 - **Layout**: the `lvgl:` section of `common.yaml`. Positions are in pixels on the 320×240 landscape screen.
 - **Offline behavior**: the `interval: 1s` block. The "Waiting for PC" box appears after 5 s without data, and the backlight dims after 60 s.
 
 ## The serial protocol
 
-The CYD reads lines of `PCS,` followed by 12 comma-separated numbers. Any program can send them; the feeder is just one option. See the protocol section of the [README](../README.md#how-it-works).
+The CYD reads lines of `PCS,` followed by 13 comma-separated numbers plus an optional free-text OS label (commas replaced by spaces). Any program can send them; the feeder is just one option. See the protocol section of the [README](../README.md#how-it-works).

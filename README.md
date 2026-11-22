@@ -3,7 +3,7 @@
 [![Build firmware](https://github.com/nyburglar/esphome-cyd-pc-monitor/actions/workflows/build.yml/badge.svg)](https://github.com/nyburglar/esphome-cyd-pc-monitor/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A live PC hardware monitor on the ESP32 **"Cheap Yellow Display"** (CYD). It shows CPU and GPU temperature, load and power, RAM and VRAM usage, and fan speeds, all sent over the USB cable that powers it. It doesn't use Wi‑Fi, Home Assistant or the cloud.
+A live PC hardware monitor on the ESP32 **"Cheap Yellow Display"** (CYD). It shows CPU and GPU temperature, load and power, RAM and VRAM usage, network download speed, the OS type, and fan speeds, all sent over the USB cable that powers it. It doesn't use Wi‑Fi, Home Assistant or the cloud.
 
 This fork adds **Linux support**: AMD/Intel CPU sensors, NVIDIA/AMD GPU metrics,
 and a systemd user service. Download the single-file
@@ -17,8 +17,9 @@ The original Windows support and CYD firmware are retained.
 
 ## Features
 
-- **CPU and GPU cards**: a load gauge, a temperature that turns green, then amber, then red as it rises, and power draw in watts
+- **CPU and GPU bars** : load bar, temperature that turns green, then amber, then red, and power draw in watts
 - **RAM and VRAM bars**: used / total GB and percent
+- **Network download speed** and the OS type
 - **Fan speeds** for the CPU and GPU, in RPM
 - **USB only**: the cable that powers the display also carries the data
 - **Ready-made firmware** for all three CYD display controllers, flashed from your browser with nothing to install
@@ -112,11 +113,11 @@ nvidia-smi (GPU fallback) ────────┘   (once per second)       
 The feeder sends one plain-text line per second:
 
 ```
-PCS,<cpu °C>,<cpu %>,<cpu W>,<gpu °C>,<gpu %>,<gpu W>,<ram used GB>,<ram total GB>,<vram used GB>,<vram total GB>,<cpu fan rpm>,<gpu fan rpm>
-PCS,56.5,10.8,63.0,59.0,3.0,35.9,28.9,31.1,7.2,12.0,1134.0,0.0
+PCS,<cpu °C>,<cpu %>,<cpu W>,<gpu °C>,<gpu %>,<gpu W>,<ram used GB>,<ram total GB>,<vram used GB>,<vram total GB>,<cpu fan rpm>,<gpu fan rpm>,<net download MB/s>,<os name>
+PCS,56.5,10.8,63.0,59.0,3.0,35.9,28.9,31.1,7.2,12.0,1134.0,0.0,12.4,Windows 11
 ```
 
-An empty field means "unknown" and shows as `--`. On the CYD, ESPHome's serial logger is turned off so the USB UART can receive this data. A small parser updates the LVGL widgets as each line arrives.
+The last field is a short free-text OS label (commas replaced by spaces). An empty field means "unknown" and shows as `--`. On the CYD, ESPHome's serial logger is turned off so the USB UART can receive this data. A small parser updates the LVGL widgets as each line arrives.
 
 The feeder finds the CYD by its USB‑serial chip (CH340/CH9102 or CP210x), so it keeps working when you move it to another USB port. If the CYD is unplugged, the feeder retries every few seconds.
 
