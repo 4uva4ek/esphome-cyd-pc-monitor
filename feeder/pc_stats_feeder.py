@@ -193,11 +193,12 @@ class NetSpeed:
         now = time.monotonic()
         rx = sum(i.bytes_recv for i in psutil.net_io_counters(pernic=True).values())
         dt = now - self.last_t
+        delta = rx - self.last_rx
         self.last_t = now
         self.last_rx = rx
         if dt <= 0:
             return None
-        return max(0.0, (rx - self.last_rx) / dt / 1e6)  # MB/s
+        return max(0.0, delta / dt / 1e6)  # MB/s
 
 
 # ---------------------------------------------------------------- fallbacks
